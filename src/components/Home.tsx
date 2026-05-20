@@ -27,11 +27,18 @@ const Home = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [sortBy, setSortBy] = useState("latest");
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(6); // Number of leads per page
+  const [totalItems,setTotalItems]=useState(0);
 
   const fetchLeads = async () => {
     try {
       const response = await getLeads();
       setLeads(response.data.leads);
+      setTotalItems(response.data.total);
+      setCurrentPage(1); 
     } catch (error: any) {
       setToast({
         message: error?.response?.data?.message,
@@ -109,7 +116,7 @@ const Home = () => {
     }
   };
 
-  // Apply filters and sorting 
+  // Apply filters and sorting on frontend
   const filteredLeads = leads
     .filter((lead) => {
       const matchesSearch =
@@ -126,6 +133,72 @@ const Home = () => {
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
 
+  // Pagination logic
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  
+  // Get current page items
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentLeads = filteredLeads.slice(indexOfFirstItem, indexOfLastItem);
+
+  // Change page
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  
+  // Go to previous page
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+  
+  // Go to next page
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) {
+          pageNumbers.push(i);
+        }
+        pageNumbers.push('...');
+        pageNumbers.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pageNumbers.push(1);
+        pageNumbers.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) {
+          pageNumbers.push(i);
+        }
+      } else {
+        pageNumbers.push(1);
+        pageNumbers.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pageNumbers.push(i);
+        }
+        pageNumbers.push('...');
+        pageNumbers.push(totalPages);
+      }
+    }
+    
+    return pageNumbers;
+  };
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, sourceFilter, sortBy]);
+
   return (
     <div className="h-screen bg-gray-100 p-6 overflow-hidden">
       <div className="max-w-7xl mx-auto h-full flex flex-col">
@@ -138,7 +211,6 @@ const Home = () => {
         <Toast
           message={toast.message}
           type={toast.type as "success" | "error"}
-        //   onClose={() => setToast({ message: "", type: "success" })}
         />
 
         <div className="flex-1 min-h-0 flex gap-6">
@@ -213,35 +285,105 @@ const Home = () => {
                   </select>
                 </div>
               </div>
-              {(search || statusFilter || sourceFilter) && (
-                <div className="mt-4 text-right">
+              
+              {/* Items per page selector */}
+              <div className="mt-4 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Show:</label>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value={6}>6</option>
+                    <option value={12}>12</option>
+                    <option value={24}>24</option>
+                    <option value={48}>48</option>
+                  </select>
+                  <span className="text-sm text-gray-600">per page</span>
+                </div>
+                
+                {(search || statusFilter || sourceFilter) && (
                   <button
                     onClick={() => {
                       setSearch("");
                       setStatusFilter("");
                       setSourceFilter("");
                       setSortBy("latest");
+                      setCurrentPage(1);
                     }}
                     className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
                   >
                     Clear all filters
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
+            
             <div className="flex-shrink-0 mb-3 px-1">
               <p className="text-sm text-gray-600">
-                Showing {filteredLeads.length} of {leads.length} leads
+                Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, totalItems)} of {totalItems} leads
               </p>
             </div>
 
             <div className="flex-1 overflow-y-auto min-h-0 pr-2">
               <LeadList
-                leads={filteredLeads}
+                leads={currentLeads}
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
               />
             </div>
+
+            {/* Pagination Component */}
+            {totalPages > 1 && (
+              <div className="flex-shrink-0 mt-5 flex justify-center items-center gap-2">
+                <button
+                  onClick={goToPreviousPage}
+                  disabled={currentPage === 1}
+                  className={`px-4 py-2 rounded-lg transition ${
+                    currentPage === 1
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  }`}
+                >
+                  Previous
+                </button>
+                
+                <div className="flex gap-2">
+                  {getPageNumbers().map((page, index) => (
+                    <button
+                      key={index}
+                      onClick={() => typeof page === 'number' && paginate(page)}
+                      className={`px-4 py-2 rounded-lg transition ${
+                        currentPage === page
+                          ? "bg-indigo-600 text-white"
+                          : page === '...'
+                          ? "bg-gray-100 text-gray-500 cursor-default"
+                          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      }`}
+                      disabled={page === '...'}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+                
+                <button
+                  onClick={goToNextPage}
+                  disabled={currentPage === totalPages}
+                  className={`px-4 py-2 rounded-lg transition ${
+                    currentPage === totalPages
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  }`}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
